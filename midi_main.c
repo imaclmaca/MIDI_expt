@@ -37,13 +37,21 @@ void on_uart_rx()
     }
 }
 
+#undef SER_DBG_ON
+#ifdef SER_DBG_ON
+#endif // SER_DBG_ON
+
 // main - setup and run loop
 int main (void)
 {
-//#ifdef SER_DBG_ON
     stdio_init_all(); // Enable UARTS - This will set UART0 for debug i/o on USB serial by default
+#ifdef SER_DBG_ON
     printf ("\n-- MIDI test starting --\n");
-//#endif // SER_DBG_ON
+#endif // SER_DBG_ON
+
+    const uint LED_PIN = PICO_DEFAULT_LED_PIN;
+    gpio_init(LED_PIN);
+    gpio_set_dir(LED_PIN, GPIO_OUT);
 
     // Set up our MIDI UART with a basic baud rate.
     uart_init(MIDI_UART, 2400);
@@ -62,11 +70,15 @@ int main (void)
 
     if (BAUD_RATE != actual)
     {
+#ifdef SER_DBG_ON
         printf ("MIDI Baud rate mismatch: got %d\n", actual);
+#endif // SER_DBG_ON
     }
     else
     {
+#ifdef SER_DBG_ON
         printf ("MIDI Baud rate OK\n");
+#endif // SER_DBG_ON
     }
 
     // Set UART flow control CTS/RTS, we don't want these, so turn them off
@@ -75,7 +87,7 @@ int main (void)
     // Set our data format: 8N1 here
     uart_set_format(MIDI_UART, DATA_BITS, STOP_BITS, PARITY);
 
-    uart_set_fifo_enabled(MIDI_UART, true); // enable the UART FIFO
+    uart_set_fifo_enabled(MIDI_UART, true); // enable the UART FIFO (FIFO is 32 deep)
 
     // Set up a RX interrupt
     // We need to set up the handler first
@@ -89,10 +101,72 @@ int main (void)
     // Now enable the UART to send interrupts - RX only
     uart_set_irq_enables(MIDI_UART, true, false);
 
+    // Wait until things start
+    sleep_ms (500);
+
+    // Send all notes off
+    char chan_mode = 0xB0; // Channel Mode
+    char all_off = 123;
+    uart_putc_raw(MIDI_UART, chan_mode);
+    uart_putc_raw(MIDI_UART, all_off); //  All Notes Off
+    uart_putc_raw(MIDI_UART, 0);
+
+    // Set voice back to default for channel
+    uart_putc_raw(MIDI_UART, 0xC0); // Program change for channel 0
+    uart_putc_raw(MIDI_UART, 0); // Voice 0
+
+    char note_on = 0x90;  // Note On is 0x9x
+    char note_pitch = 60; // 60 decimal == middle-C
+    char note_vel = 64;   // Middle volume
+
+    char chan_voice = 0;
+    char chan_vol = 70;
+
+    int led_set = 1;
+    int vol_dir = (-1);
+
     while (1) // forever loop
     {
-        char c = 'U';
-        uart_putc_raw(MIDI_UART, c);
+        // Note on:
+        uart_putc_raw(MIDI_UART, note_on);
+        uart_putc_raw(MIDI_UART, note_pitch);
+        uart_putc_raw(MIDI_UART, note_vel);
+
+        gpio_put(LED_PIN, led_set);
+
+        // sleep for a bit while note sounds
+        sleep_ms (250);
+
+        // Note OFF: running status, note-on with velocity 0
+        uart_putc_raw(MIDI_UART, note_pitch);
+        uart_putc_raw(MIDI_UART, 0);
+
+        // Tweak the channel volume
+        uart_putc_raw(MIDI_UART, chan_mode);
+        uart_putc_raw(MIDI_UART, 0x07); //  Channel volume
+        chan_vol = chan_vol + vol_dir;
+        uart_putc_raw(MIDI_UART, chan_vol);
+        if (chan_vol < 25)
+        {
+            vol_dir = 1;
+        }
+        else if (chan_vol > 70)
+        {
+            vol_dir = (-1);
+        }
+
+        // Select the next note
+        note_pitch++;
+        if (note_pitch > 72)
+        {
+            note_pitch = 60;
+            // Select the next voice
+            chan_voice = (chan_voice + 1) & 0x7F;
+            uart_putc_raw(MIDI_UART, 0xC0); // Program change for channel 0
+            uart_putc_raw(MIDI_UART, chan_voice);
+        }
+
+        led_set = (led_set + 1) & 1;
     }
 
     return 0;
