@@ -18,22 +18,58 @@
 #define STOP_BITS 1
 #define PARITY    UART_PARITY_NONE
 
-static int chars_rxed = 0;
+static int global_vol = 70;
+static int last_vol = 70;
 
-// RX interrupt handler
-void on_uart_rx()
+static int global_voice = 0;
+static int last_voice = 0;
+
+// UART0 RX interrupt handler /////////////////////////////////////
+void v_uart_Rx_isr()
+{
+    while (uart_is_readable(uart0))
+    {
+        uint8_t ch = uart_getc(uart0);
+
+        if (ch == 'V')
+        {
+            global_vol++;
+            if (global_vol > 127) global_vol = 127;
+        }
+        else if (ch == 'v')
+        {
+            global_vol--;
+            if (global_vol < 0) global_vol = 0;
+        }
+
+        if (ch == 'P')
+        {
+            global_voice++;
+            if (global_voice > 127) global_voice = 127;
+        }
+        else if (ch == 'p')
+        {
+            global_voice--;
+            if (global_voice < 0) global_voice = 0;
+        }
+    }
+}
+
+// MIDI RX interrupt handler /////////////////////////////////////
+void v_midi_Rx_isr()
 {
     while (uart_is_readable(MIDI_UART))
     {
         uint8_t ch = uart_getc(MIDI_UART);
+        (void)ch;
         // Can we send it back?
-        if (uart_is_writable(MIDI_UART))
-        {
-            // Change it slightly first!
-            ch++;
-            uart_putc(MIDI_UART, ch);
-        }
-        chars_rxed++;
+//        if (uart_is_writable(MIDI_UART))
+//        {
+//            // Change it slightly first!
+//            ch++;
+//            uart_putc(MIDI_UART, ch);
+//        }
+//        chars_rxed++;
     }
 }
 
@@ -41,10 +77,10 @@ void on_uart_rx()
 #ifdef SER_DBG_ON
 #endif // SER_DBG_ON
 
-// main - setup and run loop
+// main - setup and run loop //////////////////////////////
 int main (void)
 {
-    stdio_init_all(); // Enable UARTS - This will set UART0 for debug i/o on USB serial by default
+    stdio_init_all(); // Enable UARTS - This will set UART0 for debug
 #ifdef SER_DBG_ON
     printf ("\n-- MIDI test starting --\n");
 #endif // SER_DBG_ON
@@ -58,9 +94,10 @@ int main (void)
 
     // Turn off CRLF translation
     uart_set_translate_crlf(MIDI_UART, false);
+    uart_set_translate_crlf(uart0, false);
 
     // Set the TX and RX pins by using the function select on the GPIO
-    // Set datasheet for more information on function select
+    // See datasheet for more information on function select
     gpio_set_function(UART_1_TX_PIN, GPIO_FUNC_UART);
     gpio_set_function(UART_1_RX_PIN, GPIO_FUNC_UART);
 
@@ -92,17 +129,30 @@ int main (void)
     // Set up a RX interrupt
     // We need to set up the handler first
     // Select correct interrupt for the UART we are using
-    int UART_IRQ = MIDI_UART == uart0 ? UART0_IRQ : UART1_IRQ;
+    int MIDI_IRQ = (MIDI_UART == uart0) ? UART0_IRQ : UART1_IRQ;
 
     // And set up and enable the interrupt handlers
-    irq_set_exclusive_handler(UART_IRQ, on_uart_rx);
-    irq_set_enabled(UART_IRQ, true);
+    irq_set_exclusive_handler(MIDI_IRQ, v_midi_Rx_isr);
+    irq_set_enabled(MIDI_IRQ, true);
+
+    irq_set_exclusive_handler(UART0_IRQ, v_uart_Rx_isr);
+    irq_set_enabled(UART0_IRQ, true);
 
     // Now enable the UART to send interrupts - RX only
     uart_set_irq_enables(MIDI_UART, true, false);
 
+    uart_set_irq_enables(uart0, true, false);
+
     // Wait until things start
     sleep_ms (500);
+
+    {
+        // Print test
+        for (int idx = 0; idx < 15; ++idx)
+        {
+            uart_putc_raw(uart0, 10);
+        }
+    }
 
     // Send all notes off
     char chan_mode = 0xB0; // Channel Mode
@@ -123,7 +173,7 @@ int main (void)
     char chan_vol = 70;
 
     int led_set = 1;
-    int vol_dir = (-1);
+    //int vol_dir = (-1);
 
     while (1) // forever loop
     {
@@ -142,17 +192,35 @@ int main (void)
         uart_putc_raw(MIDI_UART, 0);
 
         // Tweak the channel volume
-        uart_putc_raw(MIDI_UART, chan_mode);
-        uart_putc_raw(MIDI_UART, 0x07); //  Channel volume
-        chan_vol = chan_vol + vol_dir;
-        uart_putc_raw(MIDI_UART, chan_vol);
-        if (chan_vol < 25)
+        if (last_vol != global_vol)
         {
-            vol_dir = 1;
+            chan_vol = global_vol;
+            last_vol = global_vol;
+            uart_putc_raw(MIDI_UART, chan_mode);
+            uart_putc_raw(MIDI_UART, 0x07); //  Channel volume
+            uart_putc_raw(MIDI_UART, chan_vol);
         }
-        else if (chan_vol > 70)
+
+//        uart_putc_raw(MIDI_UART, chan_mode);
+//        uart_putc_raw(MIDI_UART, 0x07); //  Channel volume
+//        chan_vol = chan_vol + vol_dir;
+//        uart_putc_raw(MIDI_UART, chan_vol);
+//        if (chan_vol < 25)
+//        {
+//            vol_dir = 1;
+//        }
+//        else if (chan_vol > 70)
+//        {
+//            vol_dir = (-1);
+//        }
+
+        // Select the next voice
+        if (last_voice != global_voice)
         {
-            vol_dir = (-1);
+            last_voice = global_voice;
+            chan_voice = last_voice;
+            uart_putc_raw(MIDI_UART, 0xC0); // Program change for channel 0
+            uart_putc_raw(MIDI_UART, chan_voice);
         }
 
         // Select the next note
@@ -161,12 +229,23 @@ int main (void)
         {
             note_pitch = 60;
             // Select the next voice
-            chan_voice = (chan_voice + 1) & 0x7F;
-            uart_putc_raw(MIDI_UART, 0xC0); // Program change for channel 0
-            uart_putc_raw(MIDI_UART, chan_voice);
+//            chan_voice = (chan_voice + 1) & 0x7F;
+//            uart_putc_raw(MIDI_UART, 0xC0); // Program change for channel 0
+//            uart_putc_raw(MIDI_UART, chan_voice);
         }
 
         led_set = (led_set + 1) & 1;
+
+        {
+            // Print test
+            char message [32];
+            int chars = snprintf (message, 31, "\rVoice: %3d Vol: %2d ", (chan_voice + 1), chan_vol);
+            int idx;
+            for (idx = 0; idx < chars; ++idx)
+            {
+                uart_putc_raw(uart0, message[idx]);
+            }
+        }
     }
 
     return 0;
