@@ -85,14 +85,13 @@ void core1_main (void)
 
     while (true)
     {
-        while (kc_used (&Q_midi))
+        while ((kc_used (&Q_midi)) && (uart_is_writable(MIDI_UART)))
         {
-            // NOTE: Should check UART is ready here...
             char c1 = kc_get (&Q_midi);
             uart_putc_raw(MIDI_UART, c1);
         }
 
-        while (kc_used (&Q_debug))
+        while ((kc_used (&Q_debug)) && (uart_is_writable(uart0)))
         {
             char c1 = kc_get (&Q_debug);
             uart_putc_raw(uart0, c1);
@@ -263,12 +262,7 @@ int main (void)
             // Print test
             char message [32];
             int chars = snprintf (message, 31, "\rVoice: %3d Vol: %2d ", (chan_voice + 1), chan_vol);
-            int idx;
-            for (idx = 0; idx < chars; ++idx)
-            {
-                // uart_putc_raw(uart0, message[idx]);
-                kc_put (&Q_debug, message[idx]);
-            }
+            kc_put_str (&Q_debug, message, chars);
         }
     }
 
