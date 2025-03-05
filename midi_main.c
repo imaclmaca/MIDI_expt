@@ -24,6 +24,9 @@ static Byte_Q Q_debug;
 #define STOP_BITS 1
 #define PARITY    UART_PARITY_NONE
 
+#define ACTIVE_SENSE 0xFE   // Code for Active Sensing message
+#define AS_PERIOD_us 270000 // Typical active sense repeat period, 270ms (in us ticks)
+
 static int global_vol = 70;
 static int last_vol = 70;
 
@@ -76,25 +79,46 @@ void v_midi_Rx_isr()
 //#undef SER_DBG_ON
 #define SER_DBG_ON
 /* The "main" task on the second core.
- * This manages the UART output. */
+ * This manages the UART outputs. */
 #define THREAD_READY 0xA5A5
 void core1_main (void)
 {
+    static uint32_t last_midi = 0; // When we last sent a MIDI packet
+    uint32_t time_now = 0;
+
     // signal to the primary thread that this worker thread is ready
     multicore_fifo_push_blocking (THREAD_READY);
 
-    while (true)
+    while (true) // loop forever
     {
         while ((kc_used (&Q_midi)) && (uart_is_writable(MIDI_UART)))
         {
             char c1 = kc_get (&Q_midi);
             uart_putc_raw(MIDI_UART, c1);
+            last_midi = time_now;
         }
 
         while ((kc_used (&Q_debug)) && (uart_is_writable(uart0)))
         {
             char c1 = kc_get (&Q_debug);
             uart_putc_raw(uart0, c1);
+        }
+
+        time_now = time_us_32();
+        if ((time_now - last_midi) > AS_PERIOD_us)
+        {
+            // Send an Active Sensing packet to keep the link alive.
+            if (uart_is_writable(MIDI_UART))
+            {
+                uart_putc_raw(MIDI_UART, ACTIVE_SENSE);
+                last_midi = time_now;
+//                {
+//                    // Print test
+//                    char message [32];
+//                    int chars = snprintf (message, 31, "\r\n\nActive Sense\n\n\r");
+//                    kc_put_str (&Q_debug, message, chars);
+//                }
+            }
         }
     } // forever loop
 
@@ -120,7 +144,6 @@ int main (void)
     uart_set_translate_crlf(uart0, false);
 
     // Set the TX and RX pins by using the function select on the GPIO
-    // See datasheet for more information on function select
     gpio_set_function(UART_1_TX_PIN, GPIO_FUNC_UART);
     gpio_set_function(UART_1_RX_PIN, GPIO_FUNC_UART);
 
@@ -201,6 +224,9 @@ int main (void)
     kc_put (&Q_midi, all_off); //  All Notes Off
     kc_put (&Q_midi, 0);
 
+    // Enable Active Sensing
+    kc_put (&Q_midi, ACTIVE_SENSE);
+
     // Set voice back to default for channel
     kc_put (&Q_midi, 0xC0); // Program change for channel 0
     kc_put (&Q_midi, 0); // Voice 0
@@ -264,7 +290,7 @@ int main (void)
             int chars = snprintf (message, 31, "\rVoice: %3d Vol: %2d ", (chan_voice + 1), chan_vol);
             kc_put_str (&Q_debug, message, chars);
         }
-    }
+    } // forever loop
 
     return 0;
 } // main
