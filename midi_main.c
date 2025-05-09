@@ -8,6 +8,8 @@
 #include "pico/multicore.h"
 #include "pico/binary_info.h"
 #include "hardware/uart.h"
+#include "hardware/gpio.h"
+#include "hardware/adc.h"
 
 #include "byte_queue.h"
 
@@ -27,11 +29,18 @@ static Byte_Q Q_debug;
 #define ACTIVE_SENSE 0xFE   // Code for Active Sensing message
 #define AS_PERIOD_us 270000 // Typical active sense repeat period, 270ms (in us ticks)
 
+#define ADC_POLL_us 10000 // How long to wait between polling the ADC - target 100Hz for test
+
 static int global_vol = 70;
 static int last_vol = 70;
 
 static int global_voice = 0;
 static int last_voice = 0;
+
+static uint16_t adc_raw  = 0;
+static uint16_t adc_filt = 0;
+
+static int adc_active = 0;
 
 // UART0 RX interrupt handler /////////////////////////////////////
 void v_uart_Rx_isr()
@@ -61,6 +70,10 @@ void v_uart_Rx_isr()
             global_voice--;
             if (global_voice < 0) global_voice = 0;
         }
+        else if (ch == 'm')
+        {
+            adc_active = (adc_active + 1) & 1;
+        }
     }
 } // v_uart_Rx_isr
 
@@ -85,6 +98,10 @@ void core1_main (void)
 {
     static uint32_t last_midi = 0; // When we last sent a MIDI packet
     uint32_t time_now = 0;
+    uint32_t adc_time = 0;
+
+    // Select ADC0 (GPIO26)
+    adc_select_input(0);
 
     // signal to the primary thread that this worker thread is ready
     multicore_fifo_push_blocking (THREAD_READY);
@@ -120,6 +137,15 @@ void core1_main (void)
 //                }
             }
         }
+
+        // Poll the ADC for samples
+        if ((time_now - adc_time) > ADC_POLL_us)
+        {
+            uint16_t adc_value = adc_read() >> 2;
+            adc_raw = adc_value;
+            uint16_t adc_t = (adc_filt * 3);
+            adc_filt = (adc_t + adc_value) / 4;
+        }
     } // forever loop
 
 } // core1_main
@@ -135,6 +161,13 @@ int main (void)
     const uint LED_PIN = PICO_DEFAULT_LED_PIN;
     gpio_init(LED_PIN);
     gpio_set_dir(LED_PIN, GPIO_OUT);
+
+    // Initialise the ADC hardware mechanisms
+    adc_init();
+    // Make sure GPIO for ADC0 (GPIO26) is high-impedance, no pull-ups etc
+    adc_gpio_init(26);
+    // Select ADC0 (GPIO26)
+    // adc_select_input(0);
 
     // Set up our MIDI UART with a basic baud rate.
     uart_init(MIDI_UART, 2400);
@@ -188,13 +221,13 @@ int main (void)
     irq_set_enabled(UART0_IRQ, true);
     uart_set_irq_enables(uart0, true, false);
 
-    // Start the keyboard scanner thread on core-1
+    // Start the auxiliary thread on core-1
     multicore_launch_core1 (core1_main);
 
     // Wait until things start
     sleep_ms (300);
 
-    // Wait for scan_thread() to start up
+    // Wait for auxiliary to start up
     uint32_t core1_rdy = multicore_fifo_pop_blocking();
     // cursory check that core-1 started OK
     if (core1_rdy == THREAD_READY)
@@ -240,12 +273,53 @@ int main (void)
 
     int led_set = 1;
 
+    uint16_t prev_adc = 0;
+
     while (1) // forever loop
     {
         // Note on:
-        kc_put (&Q_midi, note_on);
-        kc_put (&Q_midi, note_pitch);
-        kc_put (&Q_midi, note_vel);
+        if (adc_active)
+        {
+            if (adc_filt > 850)
+            {
+                note_vel = 0;
+            }
+            else
+            {
+                uint16_t adc_delta;
+                if (adc_filt >= prev_adc)
+                {
+                    adc_delta = adc_filt - prev_adc;
+                }
+                else
+                {
+                    adc_delta = prev_adc - adc_filt;
+                }
+                if (adc_delta < 5)
+                {
+                    // no change
+                }
+                else
+                {
+                    prev_adc = adc_filt;
+                    // ranges 50 - 700, say 30 ticks per note
+                    uint16_t note_m = adc_filt - 50;
+                    note_m = note_m / 30;
+                    note_m = 23 - note_m;
+                    note_pitch = note_m + 40;
+                    note_vel = 60;
+                }
+            }
+        }
+
+        char note_buf[4];
+//        kc_put (&Q_midi, note_on);
+//        kc_put (&Q_midi, note_pitch);
+//        kc_put (&Q_midi, note_vel);
+        note_buf[0] = note_on;
+        note_buf[1] = note_pitch;
+        note_buf[2] = note_vel;
+        kc_put_str (&Q_midi, note_buf, 3);
 
         gpio_put(LED_PIN, led_set);
 
@@ -253,41 +327,58 @@ int main (void)
         sleep_ms (250);
 
         // Note OFF: running status, note-on with velocity 0
-        kc_put (&Q_midi, note_pitch);
-        kc_put (&Q_midi, 0);
+//        kc_put (&Q_midi, note_pitch);
+//        kc_put (&Q_midi, 0);
+        note_buf[2] = 0;
+        kc_put_str (&Q_midi, &note_buf[1], 2);
 
         // Tweak the channel volume
         if (last_vol != global_vol)
         {
+            char vol_buf[4];
             chan_vol = global_vol;
             last_vol = global_vol;
-            kc_put (&Q_midi, chan_mode);
-            kc_put (&Q_midi, 0x07); //  Channel volume
-            kc_put (&Q_midi, chan_vol);
+//            kc_put (&Q_midi, chan_mode);
+//            kc_put (&Q_midi, 0x07); //  Channel volume
+//            kc_put (&Q_midi, chan_vol);
+            vol_buf[0] = chan_mode;
+            vol_buf[1] = 0x07; //  Channel volume code
+            vol_buf[2] = chan_vol;
+            kc_put_str (&Q_midi, vol_buf, 3);
         }
 
         // Select the next voice
         if (last_voice != global_voice)
         {
+            char voice_buf[2];
             last_voice = global_voice;
             chan_voice = last_voice;
-            kc_put (&Q_midi, 0xC0); // Program change for channel 0
-            kc_put (&Q_midi, chan_voice);
+//            kc_put (&Q_midi, 0xC0); // Program change for channel 0
+//            kc_put (&Q_midi, chan_voice);
+            voice_buf[0] = 0xC0; // Program change for channel 0
+            voice_buf[1] = chan_voice;
+            kc_put_str (&Q_midi, voice_buf, 2);
         }
 
-        // Select the next note
-        note_pitch++;
-        if (note_pitch > 72)
+        if (!adc_active)
         {
-            note_pitch = 60;
+            // Select the next note
+            note_pitch++;
+            if (note_pitch > 72)
+            {
+                note_pitch = 60;
+            }
+            note_vel = 64;
         }
 
         led_set = (led_set + 1) & 1;
 
         {
             // Print test
-            char message [32];
-            int chars = snprintf (message, 31, "\rVoice: %3d Vol: %2d ", (chan_voice + 1), chan_vol);
+            char message [48];
+            int chars = snprintf (message, 48, "\rVoice: %3d Vol: %2d ADC: %4u (%4u)",
+                                                (chan_voice + 1), chan_vol,
+                                                adc_raw, adc_filt);
             kc_put_str (&Q_debug, message, chars);
         }
     } // forever loop

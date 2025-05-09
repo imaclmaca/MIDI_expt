@@ -31,7 +31,7 @@ add_executable(midi_v1
 target_include_directories(midi_v1 PRIVATE ${CMAKE_CURRENT_LIST_DIR})
 
 # pull in common dependencies and additional uart hardware support
-target_link_libraries(midi_v1 PRIVATE pico_stdlib pico_multicore hardware_uart pico_unique_id)
+target_link_libraries(midi_v1 PRIVATE pico_stdlib pico_multicore hardware_uart hardware_adc pico_unique_id)
 
 # create map/bin/hex file etc.
 pico_add_extra_outputs(midi_v1)
