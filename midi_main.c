@@ -42,6 +42,97 @@ static uint16_t adc_filt = 0;
 
 static int adc_active = 0;
 
+static char note_map [] = {
+ 24, 24, 24, 24, 24, 24, 24, 24,
+ 24, 24, 24, 24, 24, 24, 24, 23,
+ 23, 23, 23, 23, 23, 23, 23, 23,
+ 23, 23, 23, 23, 23, 23, 22, 22,
+ 22, 22, 22, 22, 22, 22, 22, 22,
+ 22, 22, 22, 22, 22, 22, 21, 21,
+ 21, 21, 21, 21, 21, 21, 21, 21,
+ 21, 21, 21, 21, 21, 21, 20, 20,
+ 20, 20, 20, 20, 20, 20, 20, 20,
+ 20, 20, 20, 20, 20, 20, 20, 20,
+ 19, 19, 19, 19, 19, 19, 19, 19,
+ 19, 19, 19, 19, 19, 19, 19, 19,
+ 19, 19, 19, 18, 18, 18, 18, 18,
+ 18, 18, 18, 18, 18, 18, 18, 18,
+ 18, 18, 18, 18, 18, 18, 17, 17,
+ 17, 17, 17, 17, 17, 17, 17, 17,
+ 17, 17, 17, 17, 17, 17, 17, 17,
+ 17, 17, 17, 16, 16, 16, 16, 16,
+ 16, 16, 16, 16, 16, 16, 16, 16,
+ 16, 16, 16, 16, 16, 16, 16, 16,
+ 16, 16, 15, 15, 15, 15, 15, 15,
+ 15, 15, 15, 15, 15, 15, 15, 15,
+ 15, 15, 15, 15, 15, 15, 15, 15,
+ 15, 14, 14, 14, 14, 14, 14, 14,
+ 14, 14, 14, 14, 14, 14, 14, 14,
+ 14, 14, 14, 14, 14, 14, 14, 14,
+ 14, 14, 13, 13, 13, 13, 13, 13,
+ 13, 13, 13, 13, 13, 13, 13, 13,
+ 13, 13, 13, 13, 13, 13, 13, 13,
+ 13, 13, 13, 13, 12, 12, 12, 12,
+ 12, 12, 12, 12, 12, 12, 12, 12,
+ 12, 12, 12, 12, 12, 12, 12, 12,
+ 12, 12, 12, 12, 12, 12, 12, 12,
+ 11, 11, 11, 11, 11, 11, 11, 11,
+ 11, 11, 11, 11, 11, 11, 11, 11,
+ 11, 11, 11, 11, 11, 11, 11, 11,
+ 11, 11, 11, 11, 11, 11, 10, 10,
+ 10, 10, 10, 10, 10, 10, 10, 10,
+ 10, 10, 10, 10, 10, 10, 10, 10,
+ 10, 10, 10, 10, 10, 10, 10, 10,
+ 10, 10, 10, 10, 10,  9,  9,  9,
+  9,  9,  9,  9,  9,  9,  9,  9,
+  9,  9,  9,  9,  9,  9,  9,  9,
+  9,  9,  9,  9,  9,  9,  9,  9,
+  9,  9,  9,  9,  9,  9,  8,  8,
+  8,  8,  8,  8,  8,  8,  8,  8,
+  8,  8,  8,  8,  8,  8,  8,  8,
+  8,  8,  8,  8,  8,  8,  8,  8,
+  8,  8,  8,  8,  8,  8,  8,  8,
+  8,  7,  7,  7,  7,  7,  7,  7,
+  7,  7,  7,  7,  7,  7,  7,  7,
+  7,  7,  7,  7,  7,  7,  7,  7,
+  7,  7,  7,  7,  7,  7,  7,  7,
+  7,  7,  7,  7,  7,  7,  6,  6,
+  6,  6,  6,  6,  6,  6,  6,  6,
+  6,  6,  6,  6,  6,  6,  6,  6,
+  6,  6,  6,  6,  6,  6,  6,  6,
+  6,  6,  6,  6,  6,  6,  6,  6,
+  6,  6,  6,  6,  6,  5,  5,  5,
+  5,  5,  5,  5,  5,  5,  5,  5,
+  5,  5,  5,  5,  5,  5,  5,  5,
+  5,  5,  5,  5,  5,  5,  5,  5,
+  5,  5,  5,  5,  5,  5,  5,  5,
+  5,  5,  5,  5,  5,  5,  5,  4,
+  4,  4,  4,  4,  4,  4,  4,  4,
+  4,  4,  4,  4,  4,  4,  4,  4,
+  4,  4,  4,  4,  4,  4,  4,  4,
+  4,  4,  4,  4,  4,  4,  4,  4,
+  4,  4,  4,  4,  4,  4,  4,  4,
+  4,  4,  4,  3,  3,  3,  3,  3,
+  3,  3,  3,  3,  3,  3,  3,  3,
+  3,  3,  3,  3,  3,  3,  3,  3,
+  3,  3,  3,  3,  3,  3,  3,  3,
+  3,  3,  3,  3,  3,  3,  3,  3,
+  3,  3,  3,  3,  3,  3,  3,  3,
+  3,  3,  2,  2,  2,  2,  2,  2,
+  2,  2,  2,  2,  2,  2,  2,  2,
+  2,  2,  2,  2,  2,  2,  2,  2,
+  2,  2,  2,  2,  2,  2,  2,  2,
+  2,  2,  2,  2,  2,  2,  2,  2,
+  2,  2,  2,  2,  2,  2,  2,  2,
+  2,  2,  2,  1,  1,  1,  1,  1,
+  1,  1,  1,  1,  1,  1,  1,  1,
+  1,  1,  1,  1,  1,  1,  1,  1,
+  1,  1,  1,  1,  1,  1,  1,  1,
+  1,  1,  1,  1,  1,  1,  1,  1,
+  1,  1,  1,  1,  1,  1,  1,  1,
+  1,  1,  1,  1};
+
+
 // UART0 RX interrupt handler /////////////////////////////////////
 void v_uart_Rx_isr()
 {
@@ -143,8 +234,27 @@ void core1_main (void)
         {
             uint16_t adc_value = adc_read() >> 2;
             adc_raw = adc_value;
-            uint16_t adc_t = (adc_filt * 3);
-            adc_filt = (adc_t + adc_value) / 4;
+            // step detection
+            uint16_t adc_delta;
+            if (adc_filt >= adc_raw)
+            {
+                adc_delta = adc_filt - adc_raw;
+            }
+            else
+            {
+                adc_delta = adc_raw - adc_filt;
+            }
+            if (adc_delta < 10)
+            {
+                uint16_t adc_t = (adc_filt * 3);
+                adc_filt = (adc_t + adc_value) / 4;
+            }
+            else
+            {
+                // new note?
+                adc_filt = adc_raw;
+            }
+            adc_time = time_now;
         }
     } // forever loop
 
@@ -266,6 +376,7 @@ int main (void)
 
     char note_on = 0x90;  // Note On is 0x9x
     char note_pitch = 60; // 60 decimal == middle-C
+    char note_prev  = 60; // 60 decimal == middle-C
     char note_vel = 64;   // Middle volume
 
     char chan_voice = 0;
@@ -275,14 +386,22 @@ int main (void)
 
     uint16_t prev_adc = 0;
 
+    uint32_t time_now = 0;
+    uint32_t time_prev = 0;
     while (1) // forever loop
     {
+        time_now = time_us_32();
         // Note on:
         if (adc_active)
         {
-            if (adc_filt > 850)
+            char note_buf[4];
+            if (adc_raw > 850)
             {
                 note_vel = 0;
+                note_buf[0] = note_on;
+                note_buf[1] = note_prev;
+                note_buf[2] = note_vel;
+                kc_put_str (&Q_midi, note_buf, 3);
             }
             else
             {
@@ -295,7 +414,7 @@ int main (void)
                 {
                     adc_delta = prev_adc - adc_filt;
                 }
-                if (adc_delta < 5)
+                if (adc_delta < 10)
                 {
                     // no change
                 }
@@ -303,34 +422,65 @@ int main (void)
                 {
                     prev_adc = adc_filt;
                     // ranges 50 - 700, say 30 ticks per note
-                    uint16_t note_m = adc_filt - 50;
-                    note_m = note_m / 30;
-                    note_m = 23 - note_m;
-                    note_pitch = note_m + 40;
-                    note_vel = 60;
+//                    uint16_t note_m = adc_filt - 50;
+//                    note_m = note_m / 30;
+//                    note_m = 23 - note_m;
+//                    note_pitch = note_m + 40;
+
+                    uint16_t note_m = adc_filt - 45;
+                    if (note_m > sizeof(note_map))
+                    {
+                        note_vel = 0;
+                        note_buf[0] = note_on;
+                        note_buf[1] = note_prev;
+                        note_buf[2] = note_vel;
+                        kc_put_str (&Q_midi, note_buf, 3);
+                    }
+                    else
+                    {
+                        note_prev = note_pitch;
+                        note_pitch = note_map [note_m] + 40;
+
+                        if (note_prev != note_pitch)
+                        {
+                            note_vel = 60;
+                            note_buf[0] = note_on;
+                            note_buf[1] = note_prev;
+                            note_buf[2] = 0;
+                            kc_put_str (&Q_midi, note_buf, 3);
+
+                            note_buf[1] = note_pitch;
+                            note_buf[2] = note_vel;
+                            kc_put_str (&Q_midi, note_buf, 3);
+                            note_prev = note_pitch;
+                        }
+                    }
                 }
             }
         }
 
-        char note_buf[4];
-//        kc_put (&Q_midi, note_on);
-//        kc_put (&Q_midi, note_pitch);
-//        kc_put (&Q_midi, note_vel);
-        note_buf[0] = note_on;
-        note_buf[1] = note_pitch;
-        note_buf[2] = note_vel;
-        kc_put_str (&Q_midi, note_buf, 3);
+        if (!adc_active)
+        {
+            char note_buf[4];
+    //        kc_put (&Q_midi, note_on);
+    //        kc_put (&Q_midi, note_pitch);
+    //        kc_put (&Q_midi, note_vel);
+            note_buf[0] = note_on;
+            note_buf[1] = note_pitch;
+            note_buf[2] = note_vel;
+            kc_put_str (&Q_midi, note_buf, 3);
 
-        gpio_put(LED_PIN, led_set);
+            gpio_put(LED_PIN, led_set);
 
-        // sleep for a bit while note sounds
-        sleep_ms (250);
+            // sleep for a bit while note sounds
+            sleep_ms (250);
 
-        // Note OFF: running status, note-on with velocity 0
-//        kc_put (&Q_midi, note_pitch);
-//        kc_put (&Q_midi, 0);
-        note_buf[2] = 0;
-        kc_put_str (&Q_midi, &note_buf[1], 2);
+            // Note OFF: running status, note-on with velocity 0
+    //        kc_put (&Q_midi, note_pitch);
+    //        kc_put (&Q_midi, 0);
+            note_buf[2] = 0;
+            kc_put_str (&Q_midi, &note_buf[1], 2);
+        }
 
         // Tweak the channel volume
         if (last_vol != global_vol)
@@ -363,6 +513,7 @@ int main (void)
         if (!adc_active)
         {
             // Select the next note
+            note_prev = note_pitch;
             note_pitch++;
             if (note_pitch > 72)
             {
@@ -371,14 +522,17 @@ int main (void)
             note_vel = 64;
         }
 
-        led_set = (led_set + 1) & 1;
+        uint32_t time_delta = time_now - time_prev;
 
+        if ((!adc_active) || (time_delta >= 250000))
         {
+            time_prev = time_now;
+            led_set = (led_set + 1) & 1;
             // Print test
             char message [48];
-            int chars = snprintf (message, 48, "\rVoice: %3d Vol: %2d ADC: %4u (%4u)",
+            int chars = snprintf (message, 48, "\rVoice: %3d Vol: %2d ADC: %4u (%4u) Note: %2d",
                                                 (chan_voice + 1), chan_vol,
-                                                adc_raw, adc_filt);
+                                                adc_raw, adc_filt, note_pitch);
             kc_put_str (&Q_debug, message, chars);
         }
     } // forever loop
